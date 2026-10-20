@@ -1,0 +1,11 @@
+{
+  "name": "Pocket Stock - Personal Inventory",
+  "short_name": "Pocket Stock",
+  "description": "A simple personal barcode inventory app.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f8f6",
+  "theme_color": "#176b58",
+  "icons": []
+}

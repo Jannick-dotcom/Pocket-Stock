@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#176b58" />
+  <meta name="description" content="A simple personal barcode inventory app." />
+  <link rel="manifest" href="manifest.json" />
+  <title>Pocket Stock</title>
+  <style>
+    :root{--green:#176b58;--green2:#e3f3ed;--ink:#18231f;--muted:#65736d;--line:#dce5e0;--bg:#f5f8f6;--white:#fff;--red:#b42318}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    header{background:var(--green);color:white;padding:22px 18px 18px;position:sticky;top:0;z-index:2;box-shadow:0 2px 10px #102a2018}
+    .head{max-width:760px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px} h1{font-size:1.35rem;margin:0} .sub{font-size:.85rem;opacity:.85;margin-top:3px}
+    main{max-width:760px;margin:0 auto;padding:16px 14px 90px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}.stat{background:white;border:1px solid var(--line);border-radius:14px;padding:12px}.stat b{display:block;font-size:1.35rem}.stat span{font-size:.76rem;color:var(--muted)}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}.btn{border:0;border-radius:12px;padding:12px 14px;font:inherit;font-weight:650;cursor:pointer;min-height:44px}.primary{background:var(--green);color:white}.secondary{background:var(--green2);color:var(--green)}.plain{background:white;border:1px solid var(--line);color:var(--ink)}.danger{background:#fff0ee;color:var(--red)}
+    .search{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font:inherit;background:white;margin-bottom:12px;outline-color:var(--green)}.filters{display:flex;gap:7px;overflow:auto;margin-bottom:13px}.chip{border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:white;white-space:nowrap;font-size:.86rem;cursor:pointer}.chip.active{background:var(--green2);border-color:#9ccdbb;color:var(--green);font-weight:650}
+    .items{display:grid;gap:9px}.item{background:white;border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;gap:12px;align-items:center}.thumb{width:54px;height:54px;border-radius:10px;background:#eef4f0;display:grid;place-items:center;font-size:1.5rem;flex-shrink:0;overflow:hidden}.thumb img{width:100%;height:100%;object-fit:cover}.details{min-width:0;flex:1}.name{font-weight:700;overflow-wrap:anywhere}.meta{font-size:.82rem;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.qty{font-weight:750;background:var(--green2);color:var(--green);padding:7px 9px;border-radius:10px;white-space:nowrap}.itembuttons{display:flex;gap:5px;margin-top:7px}.small{padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:white;font-size:.8rem;cursor:pointer}
+    .empty{text-align:center;padding:34px 18px;color:var(--muted);background:white;border:1px dashed var(--line);border-radius:14px}.empty strong{display:block;color:var(--ink);margin-bottom:5px}
+    dialog{border:0;border-radius:18px;padding:0;width:min(540px,calc(100% - 24px));max-height:90vh;box-shadow:0 20px 70px #0003}dialog::backdrop{background:#10251dcc}.modalhead{padding:17px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modalhead h2{font-size:1.1rem;margin:0}.modalbody{padding:17px 18px;overflow:auto;max-height:calc(90vh - 130px)}.modalfoot{padding:13px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}.field{display:grid;gap:5px;margin-bottom:13px}.field label{font-size:.86rem;font-weight:650}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font:inherit;background:white}.field textarea{min-height:75px;resize:vertical}.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{font-size:.82rem;color:var(--muted);line-height:1.4}.scannerbox{background:#101815;border-radius:12px;overflow:hidden;position:relative}.scannerbox video{width:100%;max-height:340px;object-fit:cover;display:block}.scanstatus{font-size:.85rem;color:var(--muted);margin-top:8px}.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#17251f;color:white;padding:11px 15px;border-radius:12px;z-index:5;max-width:calc(100% - 28px);box-shadow:0 5px 20px #0002}.hidden{display:none!important}
+    @media(min-width:600px){main{padding-top:22px}.items{grid-template-columns:1fr 1fr}.item{align-items:flex-start}}
+  </style>
+</head>
+<body>
+<header><div class="head"><div><h1>📦 Pocket Stock</h1><div class="sub">Your personal inventory, kept on this device</div></div><button class="btn secondary" id="exportTop">Export CSV</button></div></header>
+<main>
+  <section class="stats"><div class="stat"><b id="totalItems">0</b><span>Products</span></div><div class="stat"><b id="totalUnits">0</b><span>Total units</span></div><div class="stat"><b id="lowStock">0</b><span>Low stock (≤ 1)</span></div></section>
+  <div class="actions"><button class="btn primary" id="scanBtn">▦ Scan barcode</button><button class="btn secondary" id="addBtn">＋ Add item</button></div>
+  <input class="search" id="search" placeholder="Search name, barcode, category…" aria-label="Search inventory" />
+  <div class="filters" id="filters"><button class="chip active" data-filter="All">All items</button><button class="chip" data-filter="Uncategorized">Uncategorized</button><button class="chip" data-filter="Low stock">Low stock</button></div>
+  <section class="items" id="items"></section>
+</main>
+
+<dialog id="itemDialog"><form id="itemForm"><div class="modalhead"><h2 id="formTitle">Add item</h2><button class="small" type="button" data-close="itemDialog">✕</button></div><div class="modalbody">
+  <input type="hidden" id="itemId" />
+  <div class="field"><label for="barcode">Barcode</label><div style="display:flex;gap:7px;flex-wrap:wrap"><input id="barcode" autocomplete="off" placeholder="Scan or enter barcode" style="flex:1;min-width:130px"/><button class="btn secondary" type="button" id="scanFromForm">Scan</button><button class="btn secondary" type="button" id="lookupBtn">Lookup</button></div><div id="lookupStatus" class="hint" aria-live="polite">Free lookup checks Open Food Facts and related public product databases.</div></div>
+  <div class="field"><label for="name">Product name *</label><input id="name" required placeholder="e.g. Ceramic mug" /></div>
+  <div class="row2"><div class="field"><label for="quantity">Quantity</label><input id="quantity" type="number" min="0" step="1" value="1" required /></div><div class="field"><label for="category">Category</label><input id="category" list="categoryList" placeholder="e.g. Kitchen"/><datalist id="categoryList"></datalist></div></div>
+  <div class="field"><label for="location">Location (optional)</label><input id="location" placeholder="e.g. Shelf A" /></div>
+  <div class="field"><label for="notes">Notes (optional)</label><textarea id="notes" placeholder="Colour, condition, details…"></textarea></div>
+  <div class="field"><label for="photo">Photo (optional)</label><input id="photo" type="file" accept="image/*" capture="environment"/><div class="hint">Photos are stored locally on this device. Large photos may use extra storage.</div></div>
+  <div id="existingHint" class="hint hidden">This barcode already exists. Saving will update that item.</div>
+ </div><div class="modalfoot"><button class="btn plain" type="button" data-close="itemDialog">Cancel</button><button class="btn primary" type="submit">Save item</button></div></form></dialog>
+
+<dialog id="scanDialog"><div class="modalhead"><h2>Scan a barcode</h2><button class="small" type="button" data-close="scanDialog">✕</button></div><div class="modalbody"><div class="scannerbox"><video id="video" playsinline muted></video></div><p id="scanStatus" class="scanstatus">Point your camera at a barcode.</p><div class="field" style="margin-top:15px"><label for="manualBarcode">Or enter barcode manually</label><input id="manualBarcode" inputmode="numeric" placeholder="Barcode number" /></div><p class="hint">Camera scanning requires a supported browser (such as Chrome) and camera permission. After scanning, Pocket Stock checks free public product databases. Coverage varies by product and barcode.</p></div><div class="modalfoot"><button class="btn plain" type="button" data-close="scanDialog">Cancel</button><button class="btn primary" id="useManual" type="button">Use barcode</button></div></dialog>
+<div id="toast" class="toast hidden" role="status"></div>
+<script>
+const $=id=>document.getElementById(id); const DB_KEY='pocket-stock-items-v1'; let items=loadItems(), currentFilter='All', stream=null, scanTimer=null, currentPhoto=null;
+function loadItems(){try{return JSON.parse(localStorage.getItem(DB_KEY)||'[]')}catch{return []}}
+function save(){localStorage.setItem(DB_KEY,JSON.stringify(items));render()}
+function uid(){return crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2)}
+function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),2600)}
+function render(){const q=$('search').value.trim().toLowerCase();let shown=items.filter(x=>{const text=[x.name,x.barcode,x.category,x.location,x.notes].join(' ').toLowerCase();if(q&&!text.includes(q))return false;if(currentFilter==='Uncategorized'&&x.category)return false;if(currentFilter==='Low stock'&&Number(x.quantity)>1)return false;return true}).sort((a,b)=>a.name.localeCompare(b.name));$('totalItems').textContent=items.length;$('totalUnits').textContent=items.reduce((s,x)=>s+Number(x.quantity||0),0);$('lowStock').textContent=items.filter(x=>Number(x.quantity)<=1).length;
+const cats=[...new Set(items.map(x=>x.category).filter(Boolean))].sort();$('categoryList').innerHTML=cats.map(c=>`<option value="${escapeHtml(c)}">`).join('');
+if(!shown.length){$('items').innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>${items.length?'No matching items':'Your inventory is empty'}</strong>${items.length?'Try a different search or filter.':'Scan a barcode or add your first item to get started.'}</div>`;return}
+$('items').innerHTML=shown.map(x=>`<article class="item"><div class="thumb">${x.photo?`<img src="${x.photo}" alt="">`:'📦'}</div><div class="details"><div class="name">${escapeHtml(x.name)}</div><div class="meta">${x.barcode?'Barcode: '+escapeHtml(x.barcode)+' · ':''}${escapeHtml(x.category||'Uncategorized')}${x.location?' · '+escapeHtml(x.location):''}</div>${x.notes?`<div class="meta">${escapeHtml(x.notes)}</div>`:''}<div class="itembuttons"><button class="small" data-edit="${x.id}">Edit</button><button class="small" data-delta="-1" data-id="${x.id}">−1</button><button class="small" data-delta="1" data-id="${x.id}">＋1</button><button class="small" data-delete="${x.id}">Delete</button></div></div><div class="qty">× ${Number(x.quantity)}</div></article>`).join('')}
+function openItem(item=null,barcode=''){ $('itemForm').reset(); currentPhoto=null;$('itemId').value=item?.id||'';$('formTitle').textContent=item?'Edit item':'Add item';$('barcode').value=item?.barcode||barcode;$('name').value=item?.name||'';$('quantity').value=item?.quantity??1;$('category').value=item?.category||'';$('location').value=item?.location||'';$('notes').value=item?.notes||'';$('existingHint').classList.add('hidden');if(item?.photo)currentPhoto=item.photo;$('itemDialog').showModal();if(!item)$('name').focus()}
+function closeScan(){if(scanTimer){clearInterval(scanTimer);scanTimer=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').srcObject=null;if($('scanDialog').open)$('scanDialog').close()}
+async function startScan(){if($('itemDialog').open)$('itemDialog').close();$('manualBarcode').value='';$('scanStatus').textContent='Starting camera…';$('scanDialog').showModal();if(!('BarcodeDetector'in window)){$('scanStatus').textContent='Automatic scanning is not supported by this browser. Enter the barcode below, or try current Chrome on Android.';return}try{const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code']});stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;await $('video').play();$('scanStatus').textContent='Camera ready — hold the barcode steady.';scanTimer=setInterval(async()=>{try{if(!$('video').videoWidth)return;const codes=await detector.detect($('video'));if(codes.length&&codes[0].rawValue){const code=codes[0].rawValue;closeScan();handleBarcode(code)}}catch(e){}},250)}catch(e){$('scanStatus').textContent='Camera unavailable or permission denied. Enter the barcode manually below.'}}
+function handleBarcode(code){const found=items.find(x=>x.barcode===code);if(found){openItem(found);toast('Existing item found — edit or update it.')}else{openItem(null,code);lookupProduct(code,true)}}
+async function lookupProduct(codeOverride='',autoFill=false){
+  const code=(codeOverride||$('barcode').value||$('manualBarcode').value).trim();
+  if(!code){toast('Scan or enter a barcode first');return}
+  $('lookupStatus').textContent='Looking up product…';$('lookupBtn').disabled=true;
+  // Open databases are free to query; product coverage depends on the barcode/category.
+  const sources=[
+    {label:'Open Food Facts',url:`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,categories,quantity,image_front_url`},
+    {label:'Open Beauty Facts',url:`https://world.openbeautyfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,categories,quantity,image_front_url`},
+    {label:'Open Pet Food Facts',url:`https://world.openpetfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,categories,quantity,image_front_url`},
+    {label:'Open Products Facts',url:`https://world.openproductsfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,categories,quantity,image_front_url`}
+  ];
+  try{
+    for(const source of sources){
+      try{
+        const response=await fetch(source.url,{headers:{'Accept':'application/json'}});
+        if(!response.ok)continue;
+        const data=await response.json();
+        const p=data?.product;
+        if(data?.status===1&&p){
+          const productName=[p.product_name,p.brands].filter(Boolean).join(' — ').trim();
+          if(productName){
+            if($('barcode').value.trim()!==code)return;
+            if(!$('name').value.trim()||autoFill)$('name').value=productName;
+            if(!$('category').value.trim()&&p.categories)$('category').value=String(p.categories).split(',')[0].trim();
+            if(p.image_front_url&&!currentPhoto)currentPhoto=p.image_front_url;
+            $('lookupStatus').textContent=`Found in ${source.label}. Check the details before saving.`;
+            toast('Product details found');return;
+          }
+        }
+      }catch(e){/* Try the next public database. */}
+    }
+    // ISBN barcodes can often be resolved through Open Library.
+    if(/^97[89][0-9]{10}$/.test(code)){
+      try{const r=await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(code)}&format=json&jscmd=data`);const d=await r.json();const book=d[`ISBN:${code}`];if(book?.title){if($('barcode').value.trim()===code){if(!$('name').value.trim()||autoFill)$('name').value=book.title;if(!$('category').value.trim())$('category').value='Books';$('lookupStatus').textContent='Found in Open Library. Check the details before saving.';toast('Book details found');return}}}catch(e){}
+    }
+    $('lookupStatus').textContent='No match found in the free databases. Enter the product name manually; not every item is listed.';
+    toast('No product match found');
+  }finally{$('lookupBtn').disabled=false}
+}
+$('scanBtn').addEventListener('click',startScan);$('scanFromForm').addEventListener('click',startScan);$('lookupBtn').addEventListener('click',()=>lookupProduct());$('barcode').addEventListener('change',()=>{if($('barcode').value.trim())lookupProduct()});$('addBtn').addEventListener('click',()=>openItem());$('search').addEventListener('input',render);
+$('filters').addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;currentFilter=b.dataset.filter;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));render()});
+document.addEventListener('click',e=>{const c=e.target.closest('[data-close]');if(c){if(c.dataset.close==='scanDialog')closeScan();else $(c.dataset.close).close()}});
+$('items').addEventListener('click',e=>{const ed=e.target.closest('[data-edit]');if(ed){const x=items.find(i=>i.id===ed.dataset.edit);if(x)openItem(x);return}const d=e.target.closest('[data-delete]');if(d){const x=items.find(i=>i.id===d.dataset.delete);if(x&&confirm(`Delete “${x.name}”?`)){items=items.filter(i=>i.id!==x.id);save();toast('Item deleted')}return}const delta=e.target.closest('[data-delta]');if(delta){const x=items.find(i=>i.id===delta.dataset.id);if(x){x.quantity=Math.max(0,Number(x.quantity)+Number(delta.dataset.delta));save()}return}});
+$('photo').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>4*1024*1024){toast('Please choose a photo smaller than 4 MB.');e.target.value='';return}currentPhoto=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(f)})});
+$('itemForm').addEventListener('submit',e=>{e.preventDefault();const id=$('itemId').value,barcode=$('barcode').value.trim(),name=$('name').value.trim();if(!name)return;let existing=barcode?items.find(x=>x.barcode===barcode&&x.id!==id):null;if(existing){existing.name=name;existing.quantity=Number($('quantity').value);existing.category=$('category').value.trim();existing.location=$('location').value.trim();existing.notes=$('notes').value.trim();if(currentPhoto)existing.photo=currentPhoto;save();$('itemDialog').close();toast('Existing barcode item updated');return}const data={id:id||uid(),barcode,name,quantity:Math.max(0,Number($('quantity').value)),category:$('category').value.trim(),location:$('location').value.trim(),notes:$('notes').value.trim(),photo:currentPhoto||(id?items.find(x=>x.id===id)?.photo:null)};if(id)items=items.map(x=>x.id===id?data:x);else items.push(data);try{save();$('itemDialog').close();toast(id?'Item updated':'Item saved')}catch(err){toast('Storage is full. Try removing photos or exporting your inventory.')}});
+$('useManual').addEventListener('click',()=>{const code=$('manualBarcode').value.trim();if(!code){toast('Enter a barcode first');return}closeScan();handleBarcode(code)});
+function exportCSV(){if(!items.length){toast('No items to export yet');return}const cols=['name','barcode','quantity','category','location','notes'];const csv=[cols.join(','),...items.map(x=>cols.map(k=>'"'+String(x[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pocket-stock-inventory.csv';a.click();URL.revokeObjectURL(a.href);toast('CSV export created')}
+$('exportTop').addEventListener('click',exportCSV);
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});render();
+</script>
+</body></html>
