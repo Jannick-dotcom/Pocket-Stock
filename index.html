@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-<header><div class="head"><div><h1>📦 Pocket Stock</h1><div class="sub">Your personal inventory, kept on this device</div></div><button class="btn secondary" id="exportTop">Export CSV</button></div></header>
+<header><div class="head"><div><h1>📦 Pocket Stock</h1><div class="sub">Your personal inventory, kept on this device</div></div><div style="display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end"><button class="btn secondary" id="importTop" type="button">Import CSV</button><button class="btn secondary" id="exportTop" type="button">Export CSV</button><input id="importFile" type="file" accept=".csv,text/csv,application/vnd.ms-excel" class="hidden" /></div></div></header>
 <main>
   <section class="stats"><div class="stat"><b id="totalItems">0</b><span>Products</span></div><div class="stat"><b id="totalUnits">0</b><span>Total units</span></div><div class="stat"><b id="lowStock">0</b><span>Low stock (≤ 1)</span></div></section>
   <div class="actions"><button class="btn primary" id="scanBtn">▦ Scan barcode</button><button class="btn secondary" id="addBtn">＋ Add item</button></div>
@@ -44,8 +44,9 @@
 
 <dialog id="scanDialog"><div class="modalhead"><h2>Scan a barcode</h2><button class="small" type="button" data-close="scanDialog">✕</button></div><div class="modalbody"><div class="scannerbox"><video id="video" playsinline muted></video></div><p id="scanStatus" class="scanstatus">Point your camera at a barcode.</p><div class="field" style="margin-top:15px"><label for="manualBarcode">Or enter barcode manually</label><input id="manualBarcode" inputmode="numeric" placeholder="Barcode number" /></div><p class="hint">Camera scanning requires a supported browser (such as Chrome) and camera permission. After scanning, Pocket Stock checks free public product databases. Coverage varies by product and barcode.</p></div><div class="modalfoot"><button class="btn plain" type="button" data-close="scanDialog">Cancel</button><button class="btn primary" id="useManual" type="button">Use barcode</button></div></dialog>
 <div id="toast" class="toast hidden" role="status"></div>
+
 <script>
-const $=id=>document.getElementById(id); const DB_KEY='pocket-stock-items-v1'; let items=loadItems(), currentFilter='All', stream=null, scanTimer=null, currentPhoto=null;
+const $=id=>document.getElementById(id); const DB_KEY='pocket-stock-items-v1'; let items=loadItems(), currentFilter='All', stream=null, scanTimer=null, scanControls=null, currentPhoto=null;
 function loadItems(){try{return JSON.parse(localStorage.getItem(DB_KEY)||'[]')}catch{return []}}
 function save(){localStorage.setItem(DB_KEY,JSON.stringify(items));render()}
 function uid(){return crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2)}
@@ -56,8 +57,66 @@ const cats=[...new Set(items.map(x=>x.category).filter(Boolean))].sort();$('cate
 if(!shown.length){$('items').innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>${items.length?'No matching items':'Your inventory is empty'}</strong>${items.length?'Try a different search or filter.':'Scan a barcode or add your first item to get started.'}</div>`;return}
 $('items').innerHTML=shown.map(x=>`<article class="item"><div class="thumb">${x.photo?`<img src="${x.photo}" alt="">`:'📦'}</div><div class="details"><div class="name">${escapeHtml(x.name)}</div><div class="meta">${x.barcode?'Barcode: '+escapeHtml(x.barcode)+' · ':''}${escapeHtml(x.category||'Uncategorized')}${x.location?' · '+escapeHtml(x.location):''}</div>${x.notes?`<div class="meta">${escapeHtml(x.notes)}</div>`:''}<div class="itembuttons"><button class="small" data-edit="${x.id}">Edit</button><button class="small" data-delta="-1" data-id="${x.id}">−1</button><button class="small" data-delta="1" data-id="${x.id}">＋1</button><button class="small" data-delete="${x.id}">Delete</button></div></div><div class="qty">× ${Number(x.quantity)}</div></article>`).join('')}
 function openItem(item=null,barcode=''){ $('itemForm').reset(); currentPhoto=null;$('itemId').value=item?.id||'';$('formTitle').textContent=item?'Edit item':'Add item';$('barcode').value=item?.barcode||barcode;$('name').value=item?.name||'';$('quantity').value=item?.quantity??1;$('category').value=item?.category||'';$('location').value=item?.location||'';$('notes').value=item?.notes||'';$('existingHint').classList.add('hidden');if(item?.photo)currentPhoto=item.photo;$('itemDialog').showModal();if(!item)$('name').focus()}
-function closeScan(){if(scanTimer){clearInterval(scanTimer);scanTimer=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').srcObject=null;if($('scanDialog').open)$('scanDialog').close()}
-async function startScan(){if($('itemDialog').open)$('itemDialog').close();$('manualBarcode').value='';$('scanStatus').textContent='Starting camera…';$('scanDialog').showModal();if(!('BarcodeDetector'in window)){$('scanStatus').textContent='Automatic scanning is not supported by this browser. Enter the barcode below, or try current Chrome on Android.';return}try{const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code']});stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;await $('video').play();$('scanStatus').textContent='Camera ready — hold the barcode steady.';scanTimer=setInterval(async()=>{try{if(!$('video').videoWidth)return;const codes=await detector.detect($('video'));if(codes.length&&codes[0].rawValue){const code=codes[0].rawValue;closeScan();handleBarcode(code)}}catch(e){}},250)}catch(e){$('scanStatus').textContent='Camera unavailable or permission denied. Enter the barcode manually below.'}}
+function closeScan(){if(scanTimer){clearInterval(scanTimer);scanTimer=null}if(scanControls){try{scanControls.stop()}catch(e){}scanControls=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').pause();$('video').srcObject=null;if($('scanDialog').open)$('scanDialog').close()}
+async function ensureZXing(){
+  if(window.ZXingBrowser?.BrowserMultiFormatReader) return true;
+  const urls=[
+    'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js',
+    'https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js'
+  ];
+  for(const src of urls){
+    try{
+      await new Promise((resolve,reject)=>{
+        const script=document.createElement('script');
+        script.src=src; script.async=true; script.onload=resolve; script.onerror=()=>{script.remove();reject(new Error('Could not load scanner library'))};
+        document.head.appendChild(script);
+      });
+      if(window.ZXingBrowser?.BrowserMultiFormatReader) return true;
+    }catch(e){ /* try the backup CDN */ }
+  }
+  return false;
+}
+async function startScan(){
+  if($('itemDialog').open)$('itemDialog').close();
+  $('manualBarcode').value='';$('scanStatus').textContent='Starting camera…';$('scanDialog').showModal();
+  if(!window.isSecureContext){$('scanStatus').textContent='Camera scanning needs HTTPS. Open Pocket Stock from its HTTPS website in Chrome.';return}
+  if(!navigator.mediaDevices?.getUserMedia){$('scanStatus').textContent='This browser cannot access the camera. Open the HTTPS site in Chrome and allow camera permission.';return}
+  try{
+    // Load the decoder at scan time and try a backup CDN; installed PWAs may have stale or failed cached scripts.
+    const zxingReady=await ensureZXing();
+    // Prefer ZXing: some Android browsers expose BarcodeDetector but fail to decode real-world frames.
+    if(zxingReady && window.ZXingBrowser?.BrowserMultiFormatReader){
+      $('scanStatus').textContent='Starting barcode reader…';
+      const hints=new Map();
+      if(window.ZXingBrowser.DecodeHintType&&window.ZXingBrowser.BarcodeFormat){
+        const H=window.ZXingBrowser.DecodeHintType,F=window.ZXingBrowser.BarcodeFormat;
+        hints.set(H.POSSIBLE_FORMATS,[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.CODE_39,F.ITF,F.QR_CODE]);
+        hints.set(H.TRY_HARDER,true);
+      }
+      const reader=new ZXingBrowser.BrowserMultiFormatReader(hints,250);
+      scanControls=await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},$('video'),(result,err)=>{
+        if(result){const code=result.getText();closeScan();handleBarcode(code)}
+      });
+      $('scanStatus').textContent='Scanning… keep the barcode inside the camera view, in focus, and well lit.';
+      return;
+    }
+    if('BarcodeDetector'in window){
+      const supported=await BarcodeDetector.getSupportedFormats();
+      const formats=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code'].filter(x=>supported.includes(x));
+      if(!formats.length)throw new Error('No supported barcode formats');
+      const detector=new BarcodeDetector({formats});
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+      $('video').srcObject=stream;await $('video').play();
+      $('scanStatus').textContent='Scanning… keep the barcode inside the camera view, in focus, and well lit.';
+      let failures=0,busy=false;
+      scanTimer=setInterval(async()=>{if(busy||!$('video').videoWidth)return;busy=true;try{const codes=await detector.detect($('video'));failures=0;if(codes.length&&codes[0].rawValue){const code=codes[0].rawValue;closeScan();handleBarcode(code)}}catch(e){failures++;if(failures>=4)$('scanStatus').textContent='Barcode detection is failing in this browser. Reload the page or use manual entry below.'}finally{busy=false}},350);
+      return;
+    }
+    $('scanStatus').textContent='Could not load the barcode decoder from either source. Check internet access, then tap Scan again. You can also enter the barcode manually below.';
+  }catch(e){
+    $('scanStatus').textContent='Scanner could not start ('+(e?.message||e?.name||'error')+'). Reload the page, check internet access, or enter the barcode manually below.';
+  }
+}
 function handleBarcode(code){const found=items.find(x=>x.barcode===code);if(found){openItem(found);toast('Existing item found — edit or update it.')}else{openItem(null,code);lookupProduct(code,true)}}
 async function lookupProduct(codeOverride='',autoFill=false){
   const code=(codeOverride||$('barcode').value||$('manualBarcode').value).trim();
@@ -105,8 +164,29 @@ $('items').addEventListener('click',e=>{const ed=e.target.closest('[data-edit]')
 $('photo').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>4*1024*1024){toast('Please choose a photo smaller than 4 MB.');e.target.value='';return}currentPhoto=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(f)})});
 $('itemForm').addEventListener('submit',e=>{e.preventDefault();const id=$('itemId').value,barcode=$('barcode').value.trim(),name=$('name').value.trim();if(!name)return;let existing=barcode?items.find(x=>x.barcode===barcode&&x.id!==id):null;if(existing){existing.name=name;existing.quantity=Number($('quantity').value);existing.category=$('category').value.trim();existing.location=$('location').value.trim();existing.notes=$('notes').value.trim();if(currentPhoto)existing.photo=currentPhoto;save();$('itemDialog').close();toast('Existing barcode item updated');return}const data={id:id||uid(),barcode,name,quantity:Math.max(0,Number($('quantity').value)),category:$('category').value.trim(),location:$('location').value.trim(),notes:$('notes').value.trim(),photo:currentPhoto||(id?items.find(x=>x.id===id)?.photo:null)};if(id)items=items.map(x=>x.id===id?data:x);else items.push(data);try{save();$('itemDialog').close();toast(id?'Item updated':'Item saved')}catch(err){toast('Storage is full. Try removing photos or exporting your inventory.')}});
 $('useManual').addEventListener('click',()=>{const code=$('manualBarcode').value.trim();if(!code){toast('Enter a barcode first');return}closeScan();handleBarcode(code)});
-function exportCSV(){if(!items.length){toast('No items to export yet');return}const cols=['name','barcode','quantity','category','location','notes'];const csv=[cols.join(','),...items.map(x=>cols.map(k=>'"'+String(x[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pocket-stock-inventory.csv';a.click();URL.revokeObjectURL(a.href);toast('CSV export created')}
-$('exportTop').addEventListener('click',exportCSV);
+function exportCSV(){if(!items.length){toast('No items to export yet');return}const cols=['name','barcode','quantity','category','location','notes'];const csv=[cols.join(','),...items.map(x=>cols.map(k=>'"'+String(x[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pocket-stock-inventory.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('CSV export created')}
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'');
+  const firstLine=(text.split(/\r?\n/,1)[0]||'');
+  const delimiter=(firstLine.split(';').length>firstLine.split(',').length)?';':',';
+  const rows=[];let row=[],cell='',quoted=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];if(quoted){if(ch==='"'&&text[i+1]==='"'){cell+='"';i++}else if(ch==='"')quoted=false;else cell+=ch}else{if(ch==='"'&&cell==='')quoted=true;else if(ch===delimiter){row.push(cell);cell=''}else if(ch==='\n'){row.push(cell.replace(/\r$/,''));if(row.some(v=>v.trim()!==''))rows.push(row);row=[];cell=''}else cell+=ch}}
+  row.push(cell.replace(/\r$/,''));if(row.some(v=>v.trim()!==''))rows.push(row);return rows;
+}
+function importCSVFile(file){const reader=new FileReader();reader.onerror=()=>toast('Could not read that CSV file');reader.onload=()=>{try{
+  const rows=parseCSV(String(reader.result||''));if(rows.length<2)throw new Error('The CSV needs a header row and at least one product.');
+  const norm=v=>String(v||'').trim().toLowerCase().replace(/[\s_-]+/g,'');
+  const headers=rows[0].map(norm);
+  const aliases={name:['name','product','productname','item','itemname','title','produkt','produktname','artikel'],barcode:['barcode','ean','upc','isbn','code','barcode number','strichcode'],quantity:['quantity','qty','stock','count','amount','menge','anzahl','bestand'],category:['category','categories','kategorie'],location:['location','place','storage','standort','ort'],notes:['notes','note','description','details','notizen','beschreibung']};
+  const index={};for(const key of Object.keys(aliases)){index[key]=headers.findIndex(h=>aliases[key].includes(h))}
+  if(index.name<0 && index.barcode<0)throw new Error('Could not find product name or barcode columns. Use the Pocket Stock CSV export format.');
+  const imported=[];for(const r of rows.slice(1)){const get=k=>index[k]>=0?String(r[index[k]]??'').trim():'';const name=get('name'),barcode=get('barcode');if(!name&&!barcode)continue;const rawQty=get('quantity');const quantity=rawQty===''?1:Number(rawQty);if(!Number.isFinite(quantity)||quantity<0)continue;imported.push({name:name||('Item '+barcode),barcode,quantity:Math.floor(quantity),category:get('category'),location:get('location'),notes:get('notes')})}
+  if(!imported.length)throw new Error('No valid products found in the CSV.');
+  const merge=confirm(`Found ${imported.length} product row(s).\n\nChoose OK to merge by barcode (matching barcodes update existing items; new items are added).\nChoose Cancel to stop the import.`);if(!merge)return;
+  let added=0,updated=0;for(const incoming of imported){const existing=incoming.barcode?items.find(x=>String(x.barcode||'').trim()===incoming.barcode):null;if(existing){existing.name=incoming.name||existing.name;existing.quantity=incoming.quantity;existing.category=incoming.category;existing.location=incoming.location;existing.notes=incoming.notes;updated++}else{items.push({id:uid(),...incoming,photo:null});added++}}
+  save();toast(`CSV imported: ${added} added, ${updated} updated`);
+ }catch(err){alert('CSV import failed: '+(err.message||'Please check the file.'))}finally{$('importFile').value=''}};reader.readAsText(file)}
+$('exportTop').addEventListener('click',exportCSV);$('importTop').addEventListener('click',()=>$('importFile').click());$('importFile').addEventListener('change',e=>{const file=e.target.files?.[0];if(file)importCSVFile(file)});
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});render();
 </script>
 </body></html>

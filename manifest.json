@@ -1,7 +1,7 @@
 {
-  "name": "Pocket Stock - Personal Inventory",
+  "name": "Pocket Stock",
   "short_name": "Pocket Stock",
-  "description": "A simple personal barcode inventory app.",
+  "description": "Personal barcode inventory",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
